@@ -92,6 +92,8 @@ const icons = {
     unlock: '<i class="fas fa-lock-open"></i>',
     pitchBar: '<i class="fas fa-microphone-lines"></i>',
     sounds: '<i class="fas fa-music"></i>',
+    phone: '<i class="fas fa-phone"></i>',
+    email: '<i class="fas fa-envelope"></i>',
     share: '<i class="fas fa-share-alt"></i>',
     user: '<i class="fas fa-user"></i>',
     fileSend: '<i class="fas fa-file-export"></i>',
@@ -155,6 +157,8 @@ const buttons = {
         showMyHandBtn: true,
         showWhiteboardBtn: true,
         showFileShareBtn: true,
+        showPromptUserPhoneNumberBtn: true,
+        showPromptUserEmailBtn: true,
         showDocumentPipBtn: showDocumentPipBtn,
         showMySettingsBtn: true,
         showAboutBtn: true, // Please keep me always true, Thank you!
@@ -240,6 +244,8 @@ const roomEmojiPickerBtn = getId('roomEmojiPickerBtn');
 const myHandBtn = getId('myHandBtn');
 const whiteboardBtn = getId('whiteboardBtn');
 const fileShareBtn = getId('fileShareBtn');
+const promptUserPhoneNumberBtn = getId('promptUserPhoneNumberBtn');
+const promptUserEmailBtn = getId('promptUserEmailBtn');
 const documentPiPBtn = getId('documentPiPBtn');
 const mySettingsBtn = getId('mySettingsBtn');
 const aboutBtn = getId('aboutBtn');
@@ -782,6 +788,9 @@ function refreshMainButtonsToolTipPlacement() {
     setTippy(myHandBtn, 'Raise your hand', placement);
     setTippy(whiteboardBtn, 'Open the whiteboard', placement);
     setTippy(fileShareBtn, 'Share file', placement);
+    // New buttons here
+    setTippy(promptUserPhoneNumberBtn, 'Contact me by phone', placement);
+    setTippy(promptUserEmailBtn, 'Contact me by email', placement);
     setTippy(documentPiPBtn, 'Toggle picture in picture', placement);
     setTippy(mySettingsBtn, 'Open the settings', placement);
     setTippy(aboutBtn, 'About this project', placement);
@@ -1268,6 +1277,9 @@ function handleButtonsRule() {
     elemDisplay(myHandBtn, buttons.main.showMyHandBtn);
     elemDisplay(whiteboardBtn, buttons.main.showWhiteboardBtn);
     elemDisplay(fileShareBtn, buttons.main.showFileShareBtn);
+    // Respect permissions for the new buttons
+    elemDisplay(promptUserPhoneNumberBtn, buttons.main.showPromptUserPhoneNumberBtn);
+    elemDisplay(promptUserEmailBtn, buttons.main.showPromptUserEmailBtn);
     elemDisplay(documentPiPBtn, buttons.main.showDocumentPipBtn);
     elemDisplay(mySettingsBtn, buttons.main.showMySettingsBtn);
     elemDisplay(aboutBtn, buttons.main.showAboutBtn);
@@ -3742,6 +3754,8 @@ function manageLeftButtons() {
     setMyHandBtn();
     setMyWhiteboardBtn();
     setMyFileShareBtn();
+    setMyPromptUserPhoneNumberBtn();
+    setMyPromptUserEmailBtn();
     setDocumentPiPBtn();
     setMySettingsBtn();
     setAboutBtn();
@@ -4303,6 +4317,18 @@ function setMyFileShareBtn() {
     });
     receiveHideBtn.addEventListener('click', (e) => {
         hideFileTransfer();
+    });
+}
+
+function setMyPromptUserPhoneNumberBtn() {
+    promptUserPhoneNumberBtn.addEventListener('click', () => {
+       openUserInfoPrompt('tel');
+    });
+}
+
+function setMyPromptUserEmailBtn() {
+    promptUserEmailBtn.addEventListener('click', () => {
+        openUserInfoPrompt('email');
     });
 }
 
@@ -8991,6 +9017,103 @@ function saveBlobToFile(blob, file) {
         document.body.removeChild(a);
         window.URL.revokeObjectURL(url);
     }, 100);
+}
+
+const presentablePromptTypes = {
+    tel: 'phone',
+    email: 'email'
+}
+
+/**
+ * Capitalizes first letter of the string
+ * @param val {string} value
+ */
+function capitalize(val) {
+    return val.charAt(0).toLocaleUpperCase() + val.slice(1);
+}
+
+/**
+ * Opens user info prompt
+ * @param {string} promptType either 'tel' or 'email'
+ */
+
+// I generally avoid premature generalization and DRY for the sake of DRY in a real world.
+// It will bite you very soon imo, when your slightly similar pathways will suddenly massively
+// diverge as the product grows. Some copy-paste is totally fine.
+// Decided to do it this way to highlight my understanding of practical software engineering
+// and patterns.
+function openUserInfoPrompt(promptType) {
+    const phoneRegex = '^\\+\\d{1,15}$';
+    const presentablePromptType = presentablePromptTypes[promptType];
+    const isTelPrompt = promptType === 'tel';
+
+    // Unnecessary in TS codebases
+    if (!presentablePromptType) {
+        console.error('openUserInfoPrompt: ',
+          'wrong promptType specified. Should be either "tel" or "email"');
+    }
+
+    console.log('User info prompt opened:', promptType);
+
+    playSound('newMessage');
+
+    Swal.fire({
+        allowOutsideClick: false,
+        background: swBg,
+        position: 'center',
+        title: `Contact me by ${presentablePromptType}`,
+        input: promptType,
+        inputValue: isTelPrompt ? '+351' : undefined,
+        inputAttributes: {
+            'aria-label': 'Your email',
+            ...(isTelPrompt ? {
+                placeholder: '+351 234 56 78',
+                pattern: phoneRegex,
+            } : {})
+        },
+        validationMessage: isTelPrompt ? 'Invalid phone number' : 'Invalid email',
+        showDenyButton: true,
+        confirmButtonText: `Send`,
+        denyButtonText: `Cancel`,
+        showClass: { popup: 'animate__animated animate__fadeInDown' },
+        hideClass: { popup: 'animate__animated animate__fadeOutUp' },
+    }).then((result) => {
+        if (result.isConfirmed) {
+            logAndSendUserInfo(promptType, result.value);
+        }
+    });
+}
+
+/**
+ * Logs user info to chat and sends to the server. Sending is disabled now.
+ * @param promptType {string} either 'email' or 'tel'
+ * @param value {string}
+ */
+function logAndSendUserInfo(promptType, value) {
+    const presentablePromptType = presentablePromptTypes[promptType];
+    const icon = promptType === 'email' && icons.email ||
+      promptType === 'tel' && icons.phone;
+
+    console.log('User info collected:', promptType, value);
+
+    // FIX: Icon is removed by filterXSS in appendMessage
+    appendMessage(
+        myPeerName,
+        rightChatAvatar,
+        'right',
+        `
+           Your contact information:
+           <br/>
+           <ul>
+               <li>${icon} ${capitalize(presentablePromptType)}: ${value}</li>
+           </ul>
+           `,
+        `${promptType}:${value}`,
+        false,
+    );
+
+    // TODO: Is it needed according to task ???
+    // sendToServer('userContactInfo', `${promptType}:${value}`);
 }
 
 /**
