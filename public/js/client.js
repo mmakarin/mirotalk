@@ -789,8 +789,8 @@ function refreshMainButtonsToolTipPlacement() {
     setTippy(whiteboardBtn, 'Open the whiteboard', placement);
     setTippy(fileShareBtn, 'Share file', placement);
     // New buttons here
-    setTippy(promptUserPhoneNumberBtn, 'Contact me by phone', placement);
-    setTippy(promptUserEmailBtn, 'Contact me by email', placement);
+    setTippy(promptUserPhoneNumberBtn, 'Ask user for a phone number', placement);
+    setTippy(promptUserEmailBtn, 'Ask user for an email', placement);
     setTippy(documentPiPBtn, 'Toggle picture in picture', placement);
     setTippy(mySettingsBtn, 'Open the settings', placement);
     setTippy(aboutBtn, 'About this project', placement);
@@ -1243,6 +1243,8 @@ function handleRules(isPresenter) {
         // buttons.remote.videoBtnClickAllowed = false;
         buttons.remote.showKickOutBtn = false;
         buttons.whiteboard.whiteboardLockBtn = false;
+        buttons.main.showPromptUserEmailBtn = false;
+        buttons.main.showPromptUserPhoneNumberBtn = false;
         //...
     } else {
         buttons.settings.showMicOptionsBtn = true;
@@ -4322,13 +4324,13 @@ function setMyFileShareBtn() {
 
 function setMyPromptUserPhoneNumberBtn() {
     promptUserPhoneNumberBtn.addEventListener('click', () => {
-       openUserInfoPrompt('tel');
+        sendPromptPhoneNumberMessage();
     });
 }
 
 function setMyPromptUserEmailBtn() {
     promptUserEmailBtn.addEventListener('click', () => {
-        openUserInfoPrompt('email');
+        sendPromptEmailMessage();
     });
 }
 
@@ -7607,6 +7609,12 @@ function handlePeerAction(config) {
         case 'ejectAll':
             handleKickedOut(config);
             break;
+        case 'promptPhoneNumber':
+            void handleUserInfoPrompt('tel', peer_name);
+            break;
+        case 'promptEmail':
+            void handleUserInfoPrompt('email', peer_name);
+            break;
     }
 }
 
@@ -7620,6 +7628,10 @@ function handleMessage(message) {
     switch (message.type) {
         case 'roomEmoji':
             handleEmoji(message);
+            break;
+        case 'promptPhoneNumber':
+          break;
+        case 'promptEmail':
             break;
         //....
         default:
@@ -9019,6 +9031,24 @@ function saveBlobToFile(blob, file) {
     }, 100);
 }
 
+async function sendPromptPhoneNumberMessage() {
+    return await sendToServer('peerAction', {
+        room_id: roomId,
+        peer_name: myPeerName,
+        peer_action: 'promptPhoneNumber',
+        send_to_all: true
+    });
+}
+
+async function sendPromptEmailMessage() {
+    return await sendToServer('peerAction', {
+        room_id: roomId,
+        peer_name: myPeerName,
+        peer_action: 'promptEmail',
+        send_to_all: true
+    });
+}
+
 const presentablePromptTypes = {
     tel: 'phone',
     email: 'email'
@@ -9033,16 +9063,45 @@ function capitalize(val) {
 }
 
 /**
+ * Handles promptPhoneNumber peerAction from remote presenter
+ * @param {string} presenterPeerName presenter peer name
+ * @param {string} promptType either 'tel' or 'email'
+ */
+async function handleUserInfoPrompt(promptType, presenterPeerName) {
+    const result = await openUserInfoPrompt(promptType);
+
+    if (!result.isConfirmed) {
+        return; // TODO: and throw or fail the promise
+    }
+
+    console.log('User info collected:', promptType, result.value);
+
+    const message = prepareUserInfoMessage(promptType, result.value);
+
+    // Both steps are required
+    // Add message to this peer's chat
+    appendMessage(
+      myPeerName,
+      rightChatAvatar,
+      'right',
+      message
+    );
+    // Send chat message to presenter
+    emitMsg(myPeerName, presenterPeerName, message, true, myPeerId);
+}
+
+/**
  * Opens user info prompt
  * @param {string} promptType either 'tel' or 'email'
  */
-
-// I generally avoid premature generalization and DRY for the sake of DRY in a real world.
-// It will bite you very soon imo, when your slightly similar pathways will suddenly massively
-// diverge as the product grows. Some copy-paste is totally fine.
-// Decided to do it this way to highlight my understanding of practical software engineering
-// and patterns.
 function openUserInfoPrompt(promptType) {
+    /*
+    I generally avoid premature generalization and DRY for the sake of DRY in a real world.
+    It will bite you very soon imo, when your slightly similar pathways will suddenly massively
+    diverge as the product grows. Some copy-paste is totally fine.
+    Decided to do it this way to highlight my understanding of practical software engineering
+    and patterns.
+    */
     const phoneRegex = '^\\+\\d{1,15}$';
     const presentablePromptType = presentablePromptTypes[promptType];
     const isTelPrompt = promptType === 'tel';
@@ -9057,7 +9116,7 @@ function openUserInfoPrompt(promptType) {
 
     playSound('newMessage');
 
-    Swal.fire({
+    return Swal.fire({
         allowOutsideClick: false,
         background: swBg,
         position: 'center',
@@ -9077,43 +9136,26 @@ function openUserInfoPrompt(promptType) {
         denyButtonText: `Cancel`,
         showClass: { popup: 'animate__animated animate__fadeInDown' },
         hideClass: { popup: 'animate__animated animate__fadeOutUp' },
-    }).then((result) => {
-        if (result.isConfirmed) {
-            logAndSendUserInfo(promptType, result.value);
-        }
     });
 }
 
 /**
- * Logs user info to chat and sends to the server. Sending is disabled now.
+ * Creates (factory) chat message based on information collected from user
  * @param promptType {string} either 'email' or 'tel'
- * @param value {string}
+ * @param value {string} value
  */
-function logAndSendUserInfo(promptType, value) {
+function prepareUserInfoMessage(promptType, value) {
     const presentablePromptType = presentablePromptTypes[promptType];
     const icon = promptType === 'email' && icons.email ||
       promptType === 'tel' && icons.phone;
 
-    console.log('User info collected:', promptType, value);
-
-    // FIX: Icon is removed by filterXSS in appendMessage
-    appendMessage(
-        myPeerName,
-        rightChatAvatar,
-        'right',
-        `
-           Your contact information:
-           <br/>
-           <ul>
-               <li>${icon} ${capitalize(presentablePromptType)}: ${value}</li>
-           </ul>
-           `,
-        `${promptType}:${value}`,
-        false,
-    );
-
-    // TODO: Is it needed according to task ???
-    // sendToServer('userContactInfo', `${promptType}:${value}`);
+    return `
+        Contact information:
+        <br/>
+        <ul>
+            <li>${icon} ${capitalize(presentablePromptType)}: ${value}</li>
+        </ul>
+        `;
 }
 
 /**

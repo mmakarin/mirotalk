@@ -1030,7 +1030,7 @@ io.sockets.on('connect', async (socket) => {
         const { room_id, peer_id, peer_uuid, peer_name, peer_use_video, peer_action, send_to_all } = config;
 
         // Only the presenter can do this actions
-        const presenterActions = ['muteAudio', 'hideVideo', 'ejectAll'];
+        const presenterActions = ['muteAudio', 'hideVideo', 'ejectAll', 'promptPhoneNumber', 'promptEmail'];
         if (presenterActions.some((v) => peer_action === v)) {
             // Check if peer is presenter
             const isPresenter = await isPeerPresenter(room_id, peer_id, peer_name, peer_uuid);
